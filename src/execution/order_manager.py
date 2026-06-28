@@ -24,14 +24,27 @@ class OrderManager:
         self.deviation = config["mt5"]["deviation"]         # 20
         self.symbol = config["strategy"]["symbol"]          # XAUUSD
         self.mt5_conn = mt5_connector
+        # Note: filling_type is auto-detected per symbol at order time
+        # (different brokers support different modes — never hardcode)
 
-        # Map fill type
-        fill_type = config["mt5"].get("type_filling", "ioc")
-        self.filling_type = {
-            "ioc": mt5.ORDER_FILLING_IOC,
-            "fok": mt5.ORDER_FILLING_FOK,
-            "return": mt5.ORDER_FILLING_RETURN,
-        }.get(fill_type, mt5.ORDER_FILLING_IOC)
+    @staticmethod
+    def _get_filling_type(symbol: str) -> int:
+        """Auto-detect the correct filling type for a symbol.
+
+        Per official docs, filling mode is broker/symbol specific.
+        Using the wrong mode causes TRADE_RETCODE_INVALID_FILL (10030).
+        """
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return mt5.ORDER_FILLING_FOK
+        mode = info.filling_mode
+        if (mode & 1) != 0:
+            return mt5.ORDER_FILLING_FOK
+        elif (mode & 2) != 0:
+            return mt5.ORDER_FILLING_IOC
+        elif (mode & 4) != 0:
+            return mt5.ORDER_FILLING_RETURN
+        return mt5.ORDER_FILLING_FOK  # safe fallback
 
     def open_position(self, signal: TradeSignal, dry_run: bool = False) -> Optional[int]:
         """Open a new position based on trade signal.
@@ -62,7 +75,7 @@ class OrderManager:
             "magic": self.magic,
             "comment": f"AGGRO_V6_{signal.direction}",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": self.filling_type,
+            "type_filling": self._get_filling_type(self.symbol),  # auto-detect
         }
 
         if dry_run:
@@ -83,6 +96,31 @@ class OrderManager:
                 else:
                     request["price"] = prices[0]  # bid
 
+            # Step 1: Validate order before sending (per official best practice)
+            check = mt5.order_check(request)
+            if check is None:
+                logger.error("order_check returned None (attempt {}): {}", attempt, mt5.last_error())
+                continue
+            if check.retcode != mt5.TRADE_RETCODE_DONE:
+                logger.warning(
+                    "order_check failed (attempt {}): retcode={} margin_free={:.2f}",
+                    attempt, check.retcode, check.margin_free,
+                )
+                # Permanent validation failures — don't retry
+                permanent_check_errors = {
+                    mt5.TRADE_RETCODE_INVALID,
+                    mt5.TRADE_RETCODE_INVALID_VOLUME,
+                    mt5.TRADE_RETCODE_MARKET_CLOSED,
+                    mt5.TRADE_RETCODE_NO_MONEY,
+                    mt5.TRADE_RETCODE_INVALID_FILL,
+                    mt5.TRADE_RETCODE_TRADE_DISABLED,
+                }
+                if check.retcode in permanent_check_errors:
+                    logger.error("Permanent check error, aborting: {}", check.retcode)
+                    return None
+                continue
+
+            # Step 2: Send the order
             result = mt5.order_send(request)
             if result is None:
                 logger.error("Order send returned None (attempt {})", attempt)
@@ -154,7 +192,7 @@ class OrderManager:
             "magic": self.magic,
             "comment": "AGGRO_V6_CLOSE",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": self.filling_type,
+            "type_filling": self._get_filling_type(pos.symbol),  # auto-detect
         }
 
         result = mt5.order_send(request)

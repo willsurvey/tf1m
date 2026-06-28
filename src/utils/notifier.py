@@ -1,7 +1,7 @@
 """Telegram notification module for trade alerts and daily reports."""
 
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 import requests
@@ -82,7 +82,7 @@ class TelegramNotifier:
             f"Lot: {lot}\n"
             f"Positions: {positions}/{max_positions}\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"⏰ {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
+            f"⏰ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC"
         )
         return self.send_message(msg)
 
@@ -121,7 +121,7 @@ class TelegramNotifier:
             f"━━━━━━━━━━━━━━━\n"
             f"{message}\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC"
+            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC"
         )
         return self.send_message(msg)
 

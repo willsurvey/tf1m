@@ -43,32 +43,44 @@ class MT5Connector:
     def connect(self) -> bool:
         """Initialize MT5 terminal and login.
 
+        Per official docs, credentials should be passed directly to initialize()
+        for brokers that require authentication at connection time.
+
         Returns:
             True if connection and login succeed.
         """
         logger.info("Connecting to MT5 | server={}", self.server)
 
-        init_kwargs = {}
+        init_kwargs: dict = {"timeout": 30000}  # 30s timeout
         if self.path:
             init_kwargs["path"] = self.path
+        # Pass credentials directly to initialize() — required by many brokers
+        if self.login:
+            init_kwargs["login"] = self.login
+        if self.password:
+            init_kwargs["password"] = self.password
+        if self.server:
+            init_kwargs["server"] = self.server
 
         if not mt5.initialize(**init_kwargs):
             logger.error("MT5 initialize failed: {}", mt5.last_error())
             return False
 
-        if self.login and self.password and self.server:
-            if not mt5.login(self.login, password=self.password, server=self.server):
-                logger.error("MT5 login failed: {}", mt5.last_error())
-                mt5.shutdown()
-                return False
+        # Verify trade is allowed on both terminal and account level
+        terminal = mt5.terminal_info()
+        if terminal and not terminal.trade_allowed:
+            logger.warning("Trade not allowed at terminal level — check AutoTrading button")
 
-        self._connected = True
-        info = mt5.account_info()
-        if info:
+        account = mt5.account_info()
+        if account:
             logger.info(
                 "MT5 connected | account={} | balance={:.2f} | server={}",
-                info.login, info.balance, info.server,
+                account.login, account.balance, account.server,
             )
+            if not account.trade_allowed:
+                logger.warning("Trade not allowed for this account")
+
+        self._connected = True
         return True
 
     def disconnect(self) -> None:
