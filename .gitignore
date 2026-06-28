@@ -1,0 +1,32 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# === Environment ===
+.env
+.venv/
+venv/
+env/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Logs & Data ===
+logs/*.log
+logs/*.zip
+data/news_cache.json
+data/trade_journal.csv
+
+# === OS ===
+Thumbs.db
+.DS_Store
+desktop.ini

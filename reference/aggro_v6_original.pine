@@ -1,0 +1,64 @@
+// ============================================================
+// XAUUSD M1 AGGRO V6 — Pine Script (TradingView)
+// Versi FINAL dengan backtest terbaik
+// PnL: +289.37 USD (+2.89%) | PF: 1.316 | WR: 58.87%
+// ============================================================
+//@version=6
+strategy("XAUUSD M1 AGGRO V6", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, commission_type=strategy.commission.percent, commission_value=0.004, slippage=2, initial_capital=10000, currency=currency.USD, pyramiding=3)
+
+// === INPUTS ===
+emaFast   = input.int(5, "Fast EMA")
+emaSlow   = input.int(13, "Slow EMA")
+rsiLen    = input.int(7, "RSI Length")
+rsiOB     = input.int(60, "RSI Bull")
+rsiOS     = input.int(40, "RSI Bear")
+atrLen    = input.int(10, "ATR Length")
+tpMult    = input.float(2.5, "TP ATR", step=0.1)
+slMult    = input.float(1.2, "SL ATR", step=0.1)
+trailMult = input.float(0.8, "Trail ATR", step=0.1)
+dcLen     = input.int(10, "Donchian Length")
+sessionFilter = input.bool(true, "Session Filter")
+tradingSession = input.session("1200-2100", "Active Session UTC")
+avoidAtrSpike = input.bool(true, "ATR Spike Filter")
+spikeThresh   = input.float(2.0, "Spike Threshold", step=0.1)
+
+// === INDICATORS ===
+fastMA = ta.ema(close, emaFast)
+slowMA = ta.ema(close, emaSlow)
+rsi    = ta.rsi(close, rsiLen)
+atr    = ta.atr(atrLen)
+avgAtr = ta.sma(atr, 100)
+dcHigh = ta.highest(high, dcLen)
+dcLow  = ta.lowest(low, dcLen)
+
+// === SIGNAL CONDITIONS ===
+bullMomentum = fastMA > slowMA and close > fastMA and rsi > rsiOB
+bearMomentum = fastMA < slowMA and close < fastMA and rsi < rsiOS
+bullBreak = high >= dcHigh[1]
+bearBreak = low <= dcLow[1]
+
+// === FILTERS ===
+inSession = sessionFilter ? not na(time(timeframe.period, tradingSession + ":1234567")) : true
+isSpike = avoidAtrSpike and (atr > avgAtr * spikeThresh)
+canTrade = inSession and not isSpike
+
+// === ENTRY ===
+if canTrade and bullMomentum and bullBreak
+    strategy.entry("Long", strategy.long)
+if canTrade and bearMomentum and bearBreak
+    strategy.entry("Short", strategy.short)
+
+// === EXIT (TP/SL/TRAIL) ===
+tpTicks    = atr * tpMult / syminfo.mintick
+slTicks    = atr * slMult / syminfo.mintick
+trailTicks = atr * trailMult / syminfo.mintick
+
+if strategy.position_size > 0
+    strategy.exit("XL", "Long", profit=tpTicks, loss=slTicks, trail_points=trailTicks, trail_offset=trailTicks * 0.3)
+if strategy.position_size < 0
+    strategy.exit("XS", "Short", profit=tpTicks, loss=slTicks, trail_points=trailTicks, trail_offset=trailTicks * 0.3)
+
+// === PLOT ===
+plot(fastMA, "Fast", color=color.lime, linewidth=2)
+plot(slowMA, "Slow", color=color.orange, linewidth=2)
+bgcolor(not inSession ? color.new(color.gray, 95) : na)

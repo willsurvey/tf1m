@@ -1,0 +1,76 @@
+# =============================================================================
+# XAUUSD AGGRO V6 — Python Dependencies
+# =============================================================================
+# Install: pip install -r requirements.txt
+# Environment: Python 3.10+ (64-bit) on Windows
+# Last Updated: 2026-06-29
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core: MetaTrader 5 Integration
+# -----------------------------------------------------------------------------
+# Library resmi MetaTrader 5 untuk Python.
+# PENTING: Hanya berjalan di Windows, butuh MT5 terminal terinstall.
+MetaTrader5>=5.0.45
+
+# -----------------------------------------------------------------------------
+# Data Processing & Analysis
+# -----------------------------------------------------------------------------
+# Manipulasi data OHLCV, kalkulasi indikator, time series operations.
+pandas>=2.0.0
+numpy>=1.24.0
+
+# -----------------------------------------------------------------------------
+# Configuration & Environment
+# -----------------------------------------------------------------------------
+# YAML parser untuk settings.yaml (parameter strategi, thresholds).
+PyYAML>=6.0
+
+# Load .env file untuk credentials (MT5 login, Telegram token).
+# Credentials TIDAK BOLEH di-hardcode atau di-commit ke repo.
+python-dotenv>=1.0.0
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+# Modern logging library — lebih baik dari stdlib logging.
+# Fitur: rotation, compression, structured logging, colored output.
+loguru>=0.7.0
+
+# -----------------------------------------------------------------------------
+# Task Scheduling
+# -----------------------------------------------------------------------------
+# Lightweight scheduler untuk periodic tasks (signal check, trailing update).
+# Alternatif: APScheduler (lebih fitur, tapi lebih berat).
+schedule>=1.2.0
+
+# -----------------------------------------------------------------------------
+# HTTP & Networking
+# -----------------------------------------------------------------------------
+# HTTP client untuk fetch news calendar dan Telegram API fallback.
+requests>=2.28.0
+
+# -----------------------------------------------------------------------------
+# Telegram Notifications
+# -----------------------------------------------------------------------------
+# Official Python wrapper untuk Telegram Bot API.
+# Digunakan untuk trade alerts, daily reports, circuit breaker notifications.
+python-telegram-bot>=20.0
+
+# -----------------------------------------------------------------------------
+# Web Scraping (News Calendar)
+# -----------------------------------------------------------------------------
+# HTML parser untuk scraping jadwal news dari ForexFactory / Investing.com.
+beautifulsoup4>=4.12.0
+
+# XML/HTML parser backend — lebih cepat dari html.parser bawaan Python.
+lxml>=4.9.0
+
+# -----------------------------------------------------------------------------
+# Testing & Quality Assurance
+# -----------------------------------------------------------------------------
+# Test runner utama. Minimum coverage target: 80%.
+pytest>=7.0.0
+
+# Coverage plugin untuk pytest — generate coverage reports.
+pytest-cov>=4.0.0

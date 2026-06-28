@@ -1,0 +1,62 @@
+# ============================================================
+# XAUUSD AGGRO V6 — Trading Bot Configuration
+# ============================================================
+
+strategy:
+  symbol: "XAUUSD"
+  timeframe: "M1"
+
+  indicators:
+    ema_fast: 5
+    ema_slow: 13
+    rsi_period: 7
+    rsi_bull_threshold: 60
+    rsi_bear_threshold: 40
+    atr_period: 10
+    atr_avg_period: 100
+    donchian_period: 10
+
+  exit:
+    tp_atr_mult: 2.5
+    sl_atr_mult: 1.2
+    trail_atr_mult: 0.8
+    trail_offset_ratio: 0.3
+
+  filters:
+    session_start_utc: "12:00"
+    session_end_utc: "21:00"
+    force_close_utc: "20:55"
+    trading_days: [0, 1, 2, 3, 4]   # 0=Monday ... 4=Friday
+    atr_spike_threshold: 2.0
+
+  news:
+    enabled: true
+    blackout_before_min: 15
+    blackout_after_min: 10
+    impact_levels: ["high"]
+    currencies: ["USD"]
+    cache_ttl_hours: 6
+
+risk:
+  lot_size: 0.02
+  max_pyramiding: 3
+  max_daily_loss_pct: 3.0
+  max_total_loss_pct: 30.0
+  consecutive_loss_cooldown: 3
+  cooldown_minutes: 30
+  disconnect_timeout_sec: 30
+
+mt5:
+  magic_number: 20260629
+  deviation: 20
+  type_filling: "ioc"
+
+notifications:
+  telegram:
+    enabled: true
+
+logging:
+  level: "INFO"
+  file_rotation: "10 MB"
+  file_retention: "30 days"
+  console: true
