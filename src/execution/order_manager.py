@@ -96,17 +96,21 @@ class OrderManager:
                 else:
                     request["price"] = prices[0]  # bid
 
-            # Step 1: Validate order before sending (per official best practice)
+            # Step 1: Validate order before sending
+            # CRITICAL: order_check() returns retcode=0 on SUCCESS.
+            # This is DIFFERENT from order_send() which uses TRADE_RETCODE_DONE=10009.
+            # Official MQL5 docs example shows: retcode=0, comment=Done
+            # Source: https://www.mql5.com/en/docs/python_metatrader5/mt5ordercheck_py
             check = mt5.order_check(request)
             if check is None:
                 logger.error("order_check returned None (attempt {}): {}", attempt, mt5.last_error())
                 continue
-            if check.retcode != mt5.TRADE_RETCODE_DONE:
+            if check.retcode != 0:  # 0 = Done/Success for order_check()
                 logger.warning(
-                    "order_check failed (attempt {}): retcode={} margin_free={:.2f}",
-                    attempt, check.retcode, check.margin_free,
+                    "order_check failed (attempt {}): retcode={} comment='{}' margin_free={:.2f}",
+                    attempt, check.retcode, check.comment, check.margin_free,
                 )
-                # Permanent validation failures — don't retry
+                # Permanent failures — abort immediately, no point retrying
                 permanent_check_errors = {
                     mt5.TRADE_RETCODE_INVALID,
                     mt5.TRADE_RETCODE_INVALID_VOLUME,
@@ -116,7 +120,7 @@ class OrderManager:
                     mt5.TRADE_RETCODE_TRADE_DISABLED,
                 }
                 if check.retcode in permanent_check_errors:
-                    logger.error("Permanent check error, aborting: {}", check.retcode)
+                    logger.error("Permanent check error, aborting: {}", check.comment)
                     return None
                 continue
 
