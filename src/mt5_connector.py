@@ -81,6 +81,15 @@ class MT5Connector:
                 logger.warning("Trade not allowed for this account")
 
         self._connected = True
+
+        # Per official docs: ensure symbol is in MarketWatch before any data fetch
+        # https://www.mql5.com/en/docs/python_metatrader5/mt5symbolselect_py
+        symbol = os.environ.get("MT5_SYMBOL", "XAUUSD")
+        if not mt5.symbol_select(symbol, True):
+            logger.warning("symbol_select({}) failed: {}", symbol, mt5.last_error())
+        else:
+            logger.debug("Symbol {} added to MarketWatch", symbol)
+
         return True
 
     def disconnect(self) -> None:
@@ -136,6 +145,11 @@ class MT5Connector:
             or None on failure.
         """
         tf = self.TIMEFRAMES.get(timeframe, mt5.TIMEFRAME_M1)
+
+        # Per official docs: symbol must be visible in MarketWatch before data fetch
+        if not mt5.symbol_select(symbol, True):
+            logger.warning("symbol_select({}) failed: {}", symbol, mt5.last_error())
+
         rates = mt5.copy_rates_from_pos(symbol, tf, 0, count)
 
         if rates is None or len(rates) == 0:
@@ -155,6 +169,9 @@ class MT5Connector:
         Returns:
             Tuple of (bid, ask) or None on failure.
         """
+        # Per official docs: ensure symbol is in MarketWatch before tick fetch
+        # https://www.mql5.com/en/docs/python_metatrader5/mt5symbolinfotick_py
+        mt5.symbol_select(symbol, True)
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             logger.warning("Cannot get price for {}", symbol)
