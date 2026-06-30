@@ -1,12 +1,19 @@
-"""Signal generation — 100% identik dengan TradingView Pine Script.
+"""Signal generation — 100% identik dengan Pine Script XAUUSD M1 AGGRO V6.
 
-Pine Script reference: XAUUSD M1 Scalper V1
-Strategy: Bollinger Bands mean-reversion + RSI confirmation
+Pine Script reference:
+  strategy("XAUUSD M1 AGGRO V6", pyramiding=3)
 
-Entry LONG:  close < BB_Lower AND RSI < 30  (oversold bounce)
-Entry SHORT: close > BB_Upper AND RSI > 70  (overbought reversal)
+Entry LONG:
+  bullMomentum = fastMA > slowMA AND close > fastMA AND rsi > 60
+  bullBreak    = high >= dcHigh[1]
+  → Entry jika canTrade AND bullMomentum AND bullBreak
 
-TP = 1.2x ATR | SL = 3.0x ATR | Trail = 1.0x ATR | Trail offset = 40%
+Entry SHORT:
+  bearMomentum = fastMA < slowMA AND close < fastMA AND rsi < 40
+  bearBreak    = low <= dcLow[1]
+  → Entry jika canTrade AND bearMomentum AND bearBreak
+
+TP = 2.5x ATR | SL = 1.2x ATR | Trail = 0.8x ATR | Trail offset = 30%
 """
 
 from dataclasses import dataclass
@@ -31,64 +38,67 @@ class TradeSignal:
 
 
 class SignalGenerator:
-    """Calculate technical indicators and generate LONG/SHORT signals.
+    """Calculate technical indicators dan generate LONG/SHORT signals.
 
-    EXACT replica of TradingView Pine Script strategy:
-    - Bollinger Bands (20, 2.0) for mean-reversion trigger
-    - RSI (14) for overbought/oversold confirmation
-    - ATR (14) for dynamic TP/SL/Trail sizing
-
-    Entry logic (sama persis dengan Pine):
-      LONG:  close < BB_Lower AND RSI < rsi_os  (contrariant — bounce dari bawah)
-      SHORT: close > BB_Upper AND RSI > rsi_ob  (contrariant — reversal dari atas)
+    EXACT replica of Pine Script XAUUSD M1 AGGRO V6:
+    - EMA(5) dan EMA(13) untuk trend direction   → Pine: ta.ema(close, 5/13)
+    - RSI(7) untuk momentum confirmation          → Pine: ta.rsi(close, 7)
+    - Donchian Channel(10) untuk breakout trigger → Pine: ta.highest/lowest(high/low, 10)
+    - ATR(10) untuk TP/SL/Trail sizing            → Pine: ta.atr(10)
     """
 
     def __init__(self, config: dict):
         ind = config["strategy"]["indicators"]
-        # Bollinger Bands — sama dengan Pine: bbLen=20, bbMult=2.0
-        self.bb_period = ind["bb_period"]          # 20
-        self.bb_mult   = ind["bb_mult"]            # 2.0
-        # RSI — sama dengan Pine: rsiLen=14
-        self.rsi_period = ind["rsi_period"]        # 14
-        self.rsi_ob     = ind["rsi_ob"]            # 70  (overbought)
-        self.rsi_os     = ind["rsi_os"]            # 30  (oversold)
-        # ATR — sama dengan Pine: atrLen=14
-        self.atr_period     = ind["atr_period"]        # 14
-        self.atr_avg_period = ind["atr_avg_period"]    # 100
+        # EMA — Pine: emaFast=5, emaSlow=13
+        self.ema_fast_period = ind["ema_fast"]       # 5
+        self.ema_slow_period = ind["ema_slow"]       # 13
+        # RSI — Pine: rsiLen=7, rsiOB=60, rsiOS=40
+        self.rsi_period = ind["rsi_period"]          # 7
+        self.rsi_ob     = ind["rsi_ob"]              # 60 (bull threshold)
+        self.rsi_os     = ind["rsi_os"]              # 40 (bear threshold)
+        # ATR — Pine: atrLen=10
+        self.atr_period     = ind["atr_period"]      # 10
+        self.atr_avg_period = ind["atr_avg_period"]  # 100
+        # Donchian — Pine: dcLen=10
+        self.dc_period = ind["donchian_period"]      # 10
 
         ext = config["strategy"]["exit"]
-        self.tp_mult    = ext["tp_atr_mult"]    # 1.2  (sama Pine: tpMult=1.2)
-        self.sl_mult    = ext["sl_atr_mult"]    # 3.0  (sama Pine: slMult=3.0)
-        self.trail_mult = ext["trail_atr_mult"] # 1.0  (sama Pine: trailMult=1.0)
+        self.tp_mult    = ext["tp_atr_mult"]    # 2.5  — Pine: tpMult=2.5
+        self.sl_mult    = ext["sl_atr_mult"]    # 1.2  — Pine: slMult=1.2
+        self.trail_mult = ext["trail_atr_mult"] # 0.8  — Pine: trailMult=0.8
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate all technical indicators on OHLCV data.
 
-        Adds columns: bb_upper, bb_lower, bb_basis, rsi, atr, atr_avg.
-        Semua identik dengan kalkulasi ta.bb() dan ta.rsi() di Pine Script.
+        Semua identik dengan Pine internals:
+        - ta.ema   → ewm(span=period, adjust=False)
+        - ta.rsi   → Wilder's RMA (ewm alpha=1/period)
+        - ta.atr   → Wilder's RMA true range
+        - ta.highest/lowest → rolling max/min
 
         Args:
             df: DataFrame dengan kolom [time, open, high, low, close, tick_volume].
 
         Returns:
-            DataFrame with added indicator columns.
+            DataFrame dengan kolom indikator tambahan.
         """
         df = df.copy()
 
-        # Bollinger Bands — Pine: basis=ta.sma(close,20), dev=2.0*ta.stdev(close,20)
-        # ta.stdev di Pine = std populasi (ddof=0) untuk period pertama,
-        # tapi praktisnya sama dengan ddof=1 untuk data banyak — kita pakai ddof=1
-        df["bb_basis"] = df["close"].rolling(window=self.bb_period, min_periods=self.bb_period).mean()
-        bb_std         = df["close"].rolling(window=self.bb_period, min_periods=self.bb_period).std(ddof=1)
-        df["bb_upper"] = df["bb_basis"] + (self.bb_mult * bb_std)
-        df["bb_lower"] = df["bb_basis"] - (self.bb_mult * bb_std)
+        # EMA — Pine: fastMA = ta.ema(close, 5)
+        df["ema_fast"] = self._calc_ema(df["close"], self.ema_fast_period)
+        df["ema_slow"] = self._calc_ema(df["close"], self.ema_slow_period)
 
-        # RSI — Pine: ta.rsi(close, 14) menggunakan Wilder's smoothing (RMA)
+        # RSI — Pine: rsi = ta.rsi(close, 7) → Wilder's RMA
         df["rsi"] = self._calc_rsi(df["close"], self.rsi_period)
 
-        # ATR — Pine: ta.atr(14) menggunakan RMA (Wilder's)
+        # ATR — Pine: atr = ta.atr(10) → Wilder's RMA
         df["atr"]     = self._calc_atr(df["high"], df["low"], df["close"], self.atr_period)
         df["atr_avg"] = df["atr"].rolling(window=self.atr_avg_period, min_periods=1).mean()
+
+        # Donchian Channel — Pine: dcHigh=ta.highest(high,10), dcLow=ta.lowest(low,10)
+        # Pine pakai dcHigh[1] dan dcLow[1] → kita shift(1) untuk match [1]
+        df["dc_high"] = df["high"].rolling(window=self.dc_period).max().shift(1)
+        df["dc_low"]  = df["low"].rolling(window=self.dc_period).min().shift(1)
 
         return df
 
@@ -97,27 +107,33 @@ class SignalGenerator:
     ) -> Optional[TradeSignal]:
         """Generate LONG atau SHORT signal.
 
-        100% identik dengan kondisi entry Pine Script:
-          longCond  = tradingAllowed and close < lower and rsi < rsiOS
-          shortCond = tradingAllowed and close > upper and rsi > rsiOB
+        100% identik dengan Pine Script AGGRO V6:
 
-        (Filter tradingAllowed = session + ATR spike sudah ditangani di TradeFilter)
+          bullMomentum = fastMA > slowMA and close > fastMA and rsi > rsiOB
+          bearMomentum = fastMA < slowMA and close < fastMA and rsi < rsiOS
+          bullBreak    = high >= dcHigh[1]
+          bearBreak    = low  <= dcLow[1]
+
+          if canTrade and bullMomentum and bullBreak → Entry Long
+          if canTrade and bearMomentum and bearBreak → Entry Short
+
+        (Filter canTrade = session + ATR spike dihandle di TradeFilter)
 
         Args:
-            df: DataFrame dengan indicator columns (dari calculate_indicators).
+            df: DataFrame dengan indicator columns dari calculate_indicators.
             bid: Current bid price.
             ask: Current ask price.
 
         Returns:
             TradeSignal jika kondisi terpenuhi, None jika tidak.
         """
-        if len(df) < self.bb_period + 1:
+        if len(df) < self.dc_period + 2:
             return None
 
         curr = df.iloc[-1]
 
-        # Validasi semua kolom tersedia dan tidak NaN
-        required = ["bb_upper", "bb_lower", "bb_basis", "rsi", "atr"]
+        # Validasi semua kolom ada dan tidak NaN
+        required = ["ema_fast", "ema_slow", "rsi", "atr", "dc_high", "dc_low"]
         try:
             if any(pd.isna(curr[col]) for col in required):
                 return None
@@ -128,36 +144,42 @@ class SignalGenerator:
         if atr <= 0:
             return None
 
-        close     = float(curr["close"])
-        bb_upper  = float(curr["bb_upper"])
-        bb_lower  = float(curr["bb_lower"])
-        rsi       = float(curr["rsi"])
+        fast_ma  = float(curr["ema_fast"])
+        slow_ma  = float(curr["ema_slow"])
+        rsi      = float(curr["rsi"])
+        close    = float(curr["close"])
+        high     = float(curr["high"])
+        low      = float(curr["low"])
+        dc_high  = float(curr["dc_high"])  # sudah shift(1) = dcHigh[1] di Pine
+        dc_low   = float(curr["dc_low"])   # sudah shift(1) = dcLow[1] di Pine
 
-        # === LONG: close < BB_Lower AND RSI < 30 ===
-        # Pine: longCond = tradingAllowed and close < lower and rsi < rsiOS
-        is_long  = (close < bb_lower) and (rsi < self.rsi_os)
+        # === LONG — Pine: bullMomentum AND bullBreak ===
+        bull_momentum = (fast_ma > slow_ma) and (close > fast_ma) and (rsi > self.rsi_ob)
+        bull_break    = (high >= dc_high)
+        is_long       = bull_momentum and bull_break
 
-        # === SHORT: close > BB_Upper AND RSI > 70 ===
-        # Pine: shortCond = tradingAllowed and close > upper and rsi > rsiOB
-        is_short = (close > bb_upper) and (rsi > self.rsi_ob)
+        # === SHORT — Pine: bearMomentum AND bearBreak ===
+        bear_momentum = (fast_ma < slow_ma) and (close < fast_ma) and (rsi < self.rsi_os)
+        bear_break    = (low <= dc_low)
+        is_short      = bear_momentum and bear_break
 
         if not is_long and not is_short:
             return None
 
-        # Build signal — exit sizing identik dengan Pine
-        # Pine: tpTicks = atr*tpMult, slTicks = atr*slMult, trailTicks = atr*trailMult
+        # Build signal — exit sizing identik Pine
+        # tpTicks = atr*tpMult/mintick → dalam price: atr*tpMult
         if is_long:
-            entry = ask                          # BUY di ask
-            tp    = entry + (atr * self.tp_mult) # TP: 1.2x ATR di atas entry
-            sl    = entry - (atr * self.sl_mult) # SL: 3.0x ATR di bawah entry
+            entry = ask
+            tp    = entry + (atr * self.tp_mult)  # +2.5 ATR
+            sl    = entry - (atr * self.sl_mult)  # -1.2 ATR
             direction = "LONG"
         else:
-            entry = bid                          # SELL di bid
-            tp    = entry - (atr * self.tp_mult) # TP: 1.2x ATR di bawah entry
-            sl    = entry + (atr * self.sl_mult) # SL: 3.0x ATR di atas entry
+            entry = bid
+            tp    = entry - (atr * self.tp_mult)  # -2.5 ATR
+            sl    = entry + (atr * self.sl_mult)  # +1.2 ATR
             direction = "SHORT"
 
-        # Trail distance = 1.0x ATR (Pine: trailMult=1.0)
+        # trail_points = atr * 0.8 (aktivasi trail)
         trail_dist = atr * self.trail_mult
 
         signal = TradeSignal(
@@ -172,24 +194,29 @@ class SignalGenerator:
 
         logger.info(
             "Signal: {} | entry={:.3f} | TP={:.3f} | SL={:.3f} | "
-            "ATR={:.3f} | BB=[{:.3f}~{:.3f}] | RSI={:.1f}",
-            direction, entry, tp, sl, atr, bb_lower, bb_upper, rsi,
+            "ATR={:.3f} | EMA[{:.3f}/{:.3f}] | RSI={:.1f} | "
+            "DC[{:.3f}/{:.3f}]",
+            direction, entry, tp, sl, atr,
+            fast_ma, slow_ma, rsi, dc_low, dc_high,
         )
         return signal
 
-    # ── Indicator helpers (identik dengan Pine internals) ────────────────────
+    # ── Indicator helpers (identik dengan Pine internals) ─────────────────────
+
+    @staticmethod
+    def _calc_ema(series: pd.Series, period: int) -> pd.Series:
+        """EMA — Pine: ta.ema() → ewm span=period, adjust=False."""
+        return series.ewm(span=period, adjust=False).mean()
 
     @staticmethod
     def _calc_rsi(series: pd.Series, period: int) -> pd.Series:
-        """RSI menggunakan Wilder's RMA smoothing — identik dengan Pine ta.rsi().
+        """RSI — Pine: ta.rsi() pakai Wilder's RMA (alpha=1/period).
 
-        Pine ta.rsi() = ta.rma() (Wilder's Moving Average), bukan EMA biasa.
-        RMA alpha = 1/period (bukan 2/(period+1) seperti EMA).
+        Identik dengan ta.rma() internal Pine.
         """
         delta    = series.diff()
         gain     = delta.clip(lower=0)
         loss     = (-delta).clip(lower=0)
-        # Wilder's RMA = alpha 1/period, sama persis Pine ta.rma()
         avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
         avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
         rs       = avg_gain / avg_loss.replace(0, np.finfo(float).eps)
@@ -199,14 +226,13 @@ class SignalGenerator:
     def _calc_atr(
         high: pd.Series, low: pd.Series, close: pd.Series, period: int
     ) -> pd.Series:
-        """ATR menggunakan Wilder's RMA — identik dengan Pine ta.atr().
+        """ATR — Pine: ta.atr() pakai Wilder's RMA (alpha=1/period).
 
-        Pine ta.atr() menggunakan ta.rma() (Wilder) bukan SMA/EMA biasa.
+        True Range = max(H-L, |H-prevC|, |L-prevC|), lalu RMA.
         """
         prev_close = close.shift(1)
         tr1 = high - low
         tr2 = (high - prev_close).abs()
         tr3 = (low  - prev_close).abs()
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        # Wilder's RMA = ewm alpha=1/period
         return true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()

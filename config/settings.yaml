@@ -1,6 +1,6 @@
 # ============================================================
-# XAUUSD AGGRO V6 — Trading Bot Configuration
-# 100% identik dengan TradingView Pine Script "XAUUSD M1 Scalper V1"
+# XAUUSD AGGRO V6 — Configuration
+# 100% identik dengan Pine Script "XAUUSD M1 AGGRO V6"
 # ============================================================
 
 strategy:
@@ -8,38 +8,39 @@ strategy:
   timeframe: "M1"
 
   indicators:
-    # Bollinger Bands — Pine: bbLen=20, bbMult=2.0
-    bb_period: 20
-    bb_mult: 2.0
-    # RSI — Pine: rsiLen=14, rsiOB=70, rsiOS=30
-    rsi_period: 14
-    rsi_ob: 70
-    rsi_os: 30
-    # ATR — Pine: atrLen=14
-    atr_period: 14
+    # EMA — Pine: emaFast=5, emaSlow=13
+    ema_fast: 5
+    ema_slow: 13
+    # RSI — Pine: rsiLen=7, rsiOB=60, rsiOS=40
+    rsi_period: 7
+    rsi_ob: 60
+    rsi_os: 40
+    # ATR — Pine: atrLen=10
+    atr_period: 10
     atr_avg_period: 100
+    # Donchian — Pine: dcLen=10 (pakai dcHigh[1] dan dcLow[1])
+    donchian_period: 10
 
   exit:
-    # Pine: tpMult=1.2, slMult=3.0
-    tp_atr_mult: 1.2
-    sl_atr_mult: 3.0
-    # Pine: trailMult=1.0, trail_offset=trailTicks*0.4
-    # trail_atr_mult  = jarak SL dari extreme price = 0.4 * ATR
-    # trail_offset_ratio = aktivasi trail saat profit >= 1.0 * ATR
-    trail_atr_mult: 0.4
-    trail_offset_ratio: 1.0
-    # Breakeven: pindah SL ke entry saat profit >= 0.8 * ATR (sebelum trail aktif)
-    breakeven_trigger: 0.8
+    # Pine: tpMult=2.5, slMult=1.2
+    tp_atr_mult: 2.5
+    sl_atr_mult: 1.2
+    # Pine: trailMult=0.8, trail_offset=trailTicks*0.3
+    # trail_atr_mult  = jarak SL dari extreme = 0.8 * 0.3 = 0.24 ATR
+    # trail_offset_ratio = aktivasi saat profit >= 0.8 ATR (= trail_points)
+    trail_atr_mult: 0.24
+    trail_offset_ratio: 0.8
+    # Breakeven: pindah SL ke entry saat profit >= 0.5 ATR (extra safety, tidak di Pine)
+    breakeven_trigger: 0.5
 
   filters:
-    # Hanya trading jam aktif London + New York: 08:00–21:00 UTC Mon–Fri
-    # Pine hanya avoid 12:30-15:00 UTC (news), kita lebih selektif
-    session_start_utc: "08:00"
+    # Pine: tradingSession = "1200-2100"
+    session_start_utc: "12:00"
     session_end_utc: "21:00"
     force_close_utc: "20:55"
     trading_days: [0, 1, 2, 3, 4]   # 0=Monday ... 4=Friday
-    # Pine: atrSpikeThreshold=1.8
-    atr_spike_threshold: 1.8
+    # Pine: spikeThresh=2.0
+    atr_spike_threshold: 2.0
 
   news:
     enabled: true
@@ -51,8 +52,8 @@ strategy:
 
 risk:
   lot_size: 0.02
-  # Pine: strategy.entry hanya jika position_size == 0 → no pyramiding
-  max_pyramiding: 1
+  # Pine: pyramiding=3
+  max_pyramiding: 3
   max_daily_loss_pct: 3.0
   max_total_loss_pct: 30.0
   consecutive_loss_cooldown: 3
