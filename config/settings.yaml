@@ -19,8 +19,9 @@ strategy:
   exit:
     tp_atr_mult: 2.5
     sl_atr_mult: 1.2
-    trail_atr_mult: 0.8
-    trail_offset_ratio: 0.3
+    trail_atr_mult: 1.5        # Jarak SL dari harga: 1.5× ATR (was 0.8 — terlalu ketat)
+    trail_offset_ratio: 1.5    # Trail baru aktif setelah profit 1.5× ATR (was 0.3 — terlalu dini)
+    breakeven_trigger: 1.0     # Pindah SL ke entry saat profit ≥ 1.0× ATR
 
   filters:
     session_start_utc: "12:00"
