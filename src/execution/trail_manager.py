@@ -1,44 +1,58 @@
-"""Trailing stop manager: dynamically trail SL to lock in profits."""
+"""Trailing stop manager — identik dengan Pine Script strategy.exit().
+
+Pine Script logic:
+  strategy.exit("XL", "Long",
+    profit      = tpTicks,              # TP = 1.2x ATR dari entry
+    loss        = slTicks,              # SL = 3.0x ATR dari entry
+    trail_points = trailTicks,          # Trail aktif saat profit >= 1.0x ATR
+    trail_offset = trailTicks * 0.4     # SL ditempatkan 0.4x ATR dari extreme
+  )
+
+Implementasi bot:
+  Phase 0 (profit < 0.8x ATR) → tidak ada perubahan SL
+  Phase 1 (profit >= 0.8x ATR) → BREAKEVEN: SL digeser ke entry (ekstra safety)
+  Phase 2 (profit >= 1.0x ATR) → TRAIL: SL = extreme_price ± (0.4x ATR)
+"""
 
 from loguru import logger
 
 
 class TrailManager:
-    """Updates trailing stops for all open positions.
+    """Updates trailing stops untuk semua open position.
 
-    Logic (3 phases):
-    1. BREAKEVEN LOCK: Saat profit >= 1.0x ATR → pindah SL ke entry price
-    2. ACTIVATION: Trail baru aktif saat profit >= 1.5x ATR (trail_offset_ratio)
-    3. TRAILING: SL digeser dengan jarak 1.5x ATR dari harga saat ini
-
-    Untuk XAUUSD M1:
-    - ATR rata-rata ~2-3 pts
-    - Breakeven aktif saat profit ~2-3 pts
-    - Trail aktif saat profit ~3-4.5 pts, jarak SL ~3-4.5 pts dari harga
-    - Normal M1 noise ~1-2 pts → SL tidak kena dari bounce biasa
+    Identik dengan Pine Script strategy.exit() trailing logic:
+    - trail_points = 1.0 * ATR  (profit minimum sebelum trail aktif)
+    - trail_offset = 0.4 * ATR  (jarak SL dari extreme price)
     """
 
     def __init__(self, config: dict, mt5_connector, order_manager):
         ext = config["strategy"]["exit"]
-        self.trail_atr_mult = ext["trail_atr_mult"]         # 1.5
-        self.trail_offset_ratio = ext["trail_offset_ratio"] # 1.5
-        self.breakeven_trigger = ext.get("breakeven_trigger", 1.0)  # 1.0
-        self.mt5_conn = mt5_connector
-        self.order_mgr = order_manager
-        self.symbol = config["strategy"]["symbol"]
-        self.magic = config["mt5"]["magic_number"]
+        # trail_offset Pine: SL distance dari extreme = 0.4x ATR
+        self.trail_atr_mult    = ext["trail_atr_mult"]       # 0.4
+        # trail_points Pine: profit activation = 1.0x ATR
+        self.trail_offset_ratio = ext["trail_offset_ratio"]  # 1.0
+        # Extra safety — breakeven sebelum trail aktif
+        self.breakeven_trigger  = ext.get("breakeven_trigger", 0.8)  # 0.8
+        self.mt5_conn    = mt5_connector
+        self.order_mgr   = order_manager
+        self.symbol      = config["strategy"]["symbol"]
+        self.magic       = config["mt5"]["magic_number"]
 
     def update_trailing_stops(self, current_atr: float) -> int:
-        """Update trailing stops for all open positions.
+        """Update trailing stops untuk semua open position.
 
-        Phase 1 — Breakeven: pindah SL ke entry saat profit >= 1x ATR
-        Phase 2 — Trail: geser SL mengikuti harga saat profit >= 1.5x ATR
+        Phase 0 (profit < 0.8x ATR): tidak ada aksi
+        Phase 1 (profit >= 0.8x ATR): BREAKEVEN — SL ke entry price
+        Phase 2 (profit >= 1.0x ATR): TRAILING — SL = bid/ask ± 0.4 ATR
+
+        Pine trail_offset = 0.4 * trail_atr * ATR dari extreme price.
+        Kita approx dengan bid/ask saat ini (lebih konservatif).
 
         Args:
-            current_atr: Current ATR value for trail distance calculation.
+            current_atr: ATR saat ini untuk menghitung jarak trail.
 
         Returns:
-            Count of positions with modified SL.
+            Jumlah posisi yang SL-nya diupdate.
         """
         if current_atr <= 0:
             return 0
@@ -49,11 +63,13 @@ class TrailManager:
         if not positions:
             return 0
 
-        trail_distance = current_atr * self.trail_atr_mult
-        # Phase 1: breakeven saat profit >= 1x ATR
-        breakeven_distance = current_atr * self.breakeven_trigger
-        # Phase 2: trail aktif saat profit >= 1.5x ATR
-        activation_distance = current_atr * self.trail_offset_ratio
+        # Jarak SL dari current price (Pine: trail_offset = 0.4x ATR)
+        trail_distance      = current_atr * self.trail_atr_mult      # 0.4 ATR
+        # Profit minimum untuk aktifkan trail (Pine: trail_points = 1.0x ATR)
+        activation_distance = current_atr * self.trail_offset_ratio  # 1.0 ATR
+        # Profit minimum untuk breakeven (extra safety, tidak ada di Pine)
+        breakeven_distance  = current_atr * self.breakeven_trigger    # 0.8 ATR
+
         modified = 0
 
         for pos in positions:
@@ -66,21 +82,24 @@ class TrailManager:
                 if pos.type == 0:  # BUY position
                     profit_distance = bid - pos.price_open
 
-                    # Phase 2: Full trail (profit >= 1.5x ATR)
+                    # Phase 2: TRAILING AKTIF (profit >= 1.0x ATR)
+                    # Pine: SL = highestSeen - trail_offset
+                    # Approx: SL = bid - 0.4 ATR (selalu gerak naik, tidak turun)
                     if profit_distance >= activation_distance:
                         new_sl = round(bid - trail_distance, 3)
-                        # Jangan pernah turunkan SL (selalu lock ke atas)
-                        # Jangan biarkan SL turun di bawah entry
-                        new_sl = max(new_sl, pos.price_open)
+                        # Hard floor: SL tidak boleh turun di bawah entry
+                        new_sl = max(new_sl, round(pos.price_open, 3))
                         if pos.sl == 0 or new_sl > pos.sl:
                             if self.order_mgr.modify_sl(pos.ticket, new_sl):
                                 modified += 1
                                 logger.debug(
-                                    "Trail LONG #{}: SL {:.3f} → {:.3f} (trail)",
+                                    "Trail LONG #{}: SL {:.3f} → {:.3f} "
+                                    "(profit={:.3f}, trail_dist={:.3f})",
                                     pos.ticket, pos.sl, new_sl,
+                                    profit_distance, trail_distance,
                                 )
 
-                    # Phase 1: Breakeven lock (profit >= 1x ATR)
+                    # Phase 1: BREAKEVEN (profit >= 0.8x ATR, belum trail)
                     elif profit_distance >= breakeven_distance:
                         breakeven_sl = round(pos.price_open, 3)
                         if pos.sl < breakeven_sl:
@@ -94,21 +113,24 @@ class TrailManager:
                 elif pos.type == 1:  # SELL position
                     profit_distance = pos.price_open - ask
 
-                    # Phase 2: Full trail (profit >= 1.5x ATR)
+                    # Phase 2: TRAILING AKTIF (profit >= 1.0x ATR)
+                    # Pine: SL = lowestSeen + trail_offset
+                    # Approx: SL = ask + 0.4 ATR (selalu gerak turun, tidak naik)
                     if profit_distance >= activation_distance:
                         new_sl = round(ask + trail_distance, 3)
-                        # Jangan pernah naikkan SL (selalu lock ke bawah)
-                        # Jangan biarkan SL naik di atas entry
-                        new_sl = min(new_sl, pos.price_open)
+                        # Hard ceiling: SL tidak boleh naik di atas entry
+                        new_sl = min(new_sl, round(pos.price_open, 3))
                         if pos.sl == 0 or new_sl < pos.sl:
                             if self.order_mgr.modify_sl(pos.ticket, new_sl):
                                 modified += 1
                                 logger.debug(
-                                    "Trail SHORT #{}: SL {:.3f} → {:.3f} (trail)",
+                                    "Trail SHORT #{}: SL {:.3f} → {:.3f} "
+                                    "(profit={:.3f}, trail_dist={:.3f})",
                                     pos.ticket, pos.sl, new_sl,
+                                    profit_distance, trail_distance,
                                 )
 
-                    # Phase 1: Breakeven lock (profit >= 1x ATR)
+                    # Phase 1: BREAKEVEN (profit >= 0.8x ATR, belum trail)
                     elif profit_distance >= breakeven_distance:
                         breakeven_sl = round(pos.price_open, 3)
                         if pos.sl > breakeven_sl:

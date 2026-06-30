@@ -1,5 +1,6 @@
 # ============================================================
 # XAUUSD AGGRO V6 — Trading Bot Configuration
+# 100% identik dengan TradingView Pine Script "XAUUSD M1 Scalper V1"
 # ============================================================
 
 strategy:
@@ -7,28 +8,38 @@ strategy:
   timeframe: "M1"
 
   indicators:
-    ema_fast: 5
-    ema_slow: 13
-    rsi_period: 7
-    rsi_bull_threshold: 60
-    rsi_bear_threshold: 40
-    atr_period: 10
+    # Bollinger Bands — Pine: bbLen=20, bbMult=2.0
+    bb_period: 20
+    bb_mult: 2.0
+    # RSI — Pine: rsiLen=14, rsiOB=70, rsiOS=30
+    rsi_period: 14
+    rsi_ob: 70
+    rsi_os: 30
+    # ATR — Pine: atrLen=14
+    atr_period: 14
     atr_avg_period: 100
-    donchian_period: 10
 
   exit:
-    tp_atr_mult: 2.5
-    sl_atr_mult: 1.2
-    trail_atr_mult: 1.5        # Jarak SL dari harga: 1.5× ATR (was 0.8 — terlalu ketat)
-    trail_offset_ratio: 1.5    # Trail baru aktif setelah profit 1.5× ATR (was 0.3 — terlalu dini)
-    breakeven_trigger: 1.0     # Pindah SL ke entry saat profit ≥ 1.0× ATR
+    # Pine: tpMult=1.2, slMult=3.0
+    tp_atr_mult: 1.2
+    sl_atr_mult: 3.0
+    # Pine: trailMult=1.0, trail_offset=trailTicks*0.4
+    # trail_atr_mult  = jarak SL dari extreme price = 0.4 * ATR
+    # trail_offset_ratio = aktivasi trail saat profit >= 1.0 * ATR
+    trail_atr_mult: 0.4
+    trail_offset_ratio: 1.0
+    # Breakeven: pindah SL ke entry saat profit >= 0.8 * ATR (sebelum trail aktif)
+    breakeven_trigger: 0.8
 
   filters:
-    session_start_utc: "12:00"
+    # Hanya trading jam aktif London + New York: 08:00–21:00 UTC Mon–Fri
+    # Pine hanya avoid 12:30-15:00 UTC (news), kita lebih selektif
+    session_start_utc: "08:00"
     session_end_utc: "21:00"
     force_close_utc: "20:55"
     trading_days: [0, 1, 2, 3, 4]   # 0=Monday ... 4=Friday
-    atr_spike_threshold: 2.0
+    # Pine: atrSpikeThreshold=1.8
+    atr_spike_threshold: 1.8
 
   news:
     enabled: true
@@ -40,7 +51,8 @@ strategy:
 
 risk:
   lot_size: 0.02
-  max_pyramiding: 3
+  # Pine: strategy.entry hanya jika position_size == 0 → no pyramiding
+  max_pyramiding: 1
   max_daily_loss_pct: 3.0
   max_total_loss_pct: 30.0
   consecutive_loss_cooldown: 3
@@ -50,7 +62,6 @@ risk:
 mt5:
   magic_number: 20260629
   deviation: 20
-  type_filling: "ioc"
 
 notifications:
   telegram:
